@@ -228,7 +228,9 @@ fun PublicShopScreen(shopId: String, onBack: () -> Unit, viewModel: PublicShopVi
     SimpleScaffold(shop?.name ?: "দোকান", onBack) { padding ->
         val place = shop
         if (place == null) {
-            EmptyHint("দোকান নেই", "মালিক দোকান পেজ চালু করেননি।")
+            Column(Modifier.padding(padding)) {
+                EmptyHint("দোকান নেই", "মালিক দোকান পেজ চালু করেননি।")
+            }
         } else {
             Column(Modifier.padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(place.type.label())

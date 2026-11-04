@@ -57,13 +57,19 @@ You need Android Studio (JDK 17 or 21), an Android SDK, and a Firebase project o
 
 ### 2. SHA-1
 
-Debug SHA-1 is required for Google sign-in:
+The debug build uses the keystore committed at `app/debug.keystore` (alias `androiddebugkey`, store and key password `android`). That keeps the debug SHA-1 the same on every machine and in CI. It is a debug key only.
+
+```text
+SHA-1: 81:59:C2:4B:0F:17:23:CF:56:A2:5C:E1:ED:9E:7D:CF:07:68:BF:9E
+```
+
+Confirm with:
 
 ```bash
 ./gradlew :app:signingReport
 ```
 
-Add the SHA-1 of the debug key (and later the release key) under the Android app in Firebase, then download `google-services.json` again.
+Add that SHA-1 (and later the release key) under the Android app in Firebase, then download `google-services.json` again. The Firebase project id in `.firebaserc` is `hisab--boi`.
 
 ### 3. Maps key
 
@@ -109,7 +115,7 @@ cd ..
 firebase deploy --only functions
 ```
 
-Region is **asia-southeast1**. The Android client calls Functions in that region.
+Region is **asia-south1** (Mumbai), same as Firestore. The Android client calls Functions in that region.
 
 `.env` example:
 
@@ -138,7 +144,7 @@ Set the SMS provider to `bulksmsbd`, `sslwireless`, or `generic`. See `functions
 
 `paymentWebhook` returns HTTP 403 until `PAYMENT_WEBHOOK_ENABLED=true`. A future bank or MFS integration can POST:
 
-`POST https://asia-southeast1-<project>.cloudfunctions.net/paymentWebhook`
+`POST https://asia-south1-<project>.cloudfunctions.net/paymentWebhook`
 
 Header: `x-hisab-webhook-secret: <PAYMENT_WEBHOOK_SECRET>`
 
@@ -186,7 +192,7 @@ cd functions && npm test
 
 1. Firebase প্রজেক্ট বানান। Android অ্যাপের প্যাকেজ `com.hisabboi.app`।
 2. `app/google-services.json` প্লেসহোল্ডার ফাইলটি নতুন ফাইল দিয়ে বদলান।
-3. Authentication-এ Google চালু করুন। `./gradlew :app:signingReport` দিয়ে SHA-1 বের করে Firebase-এ যোগ করুন।
+3. Authentication-এ Google চালু করুন। ডিবাগ SHA-1 হলো `81:59:C2:4B:0F:17:23:CF:56:A2:5C:E1:ED:9E:7D:CF:07:68:BF:9E` (`app/debug.keystore`)। Firebase প্রজেক্ট আইডি `hisab--boi`। ফাংশন রিজিয়ন `asia-south1`।
 4. Firestore, Storage, Cloud Messaging চালু করুন।
 5. `local.properties`-এ `MAPS_API_KEY` দিন (ম্যাপের জন্য)। কী কমিট করবেন না।
 6. `firebase deploy --only firestore:rules,firestore:indexes,storage`

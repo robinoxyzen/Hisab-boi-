@@ -12,7 +12,7 @@ import { createSmsProvider } from "./sms/provider";
 import { reminderSms, transactionSms } from "./sms/templates";
 
 initializeApp();
-setGlobalOptions({ region: "asia-southeast1", maxInstances: 10 });
+setGlobalOptions({ region: "asia-south1", maxInstances: 10 });
 
 const adminEmails = defineString("ADMIN_EMAILS", {
   default: "robinoxyzen@gmail.com",
@@ -30,9 +30,12 @@ async function grantIfListed(uid: string, email: string | undefined, verified: b
 }
 
 /** New Google users whose verified email is in ADMIN_EMAILS become admins. */
-export const grantAdminOnCreate = functionsV1.auth.user().onCreate(async (user) => {
-  await grantIfListed(user.uid, user.email, user.emailVerified);
-});
+export const grantAdminOnCreate = functionsV1
+  .region("asia-south1")
+  .auth.user()
+  .onCreate(async (user) => {
+    await grantIfListed(user.uid, user.email, user.emailVerified);
+  });
 
 /** Existing users call this after sign-in. The decision is server-side; the client only reads the claim. */
 export const refreshAdminClaim = onCall(async (request) => {
