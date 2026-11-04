@@ -69,7 +69,7 @@ Confirm with:
 ./gradlew :app:signingReport
 ```
 
-Add that SHA-1 (and later the release key) under the Android app in Firebase, then download `google-services.json` again. The Firebase project id in `.firebaserc` is `hisab--boi`.
+Add that SHA-1 (and later the release key) under the Android app in Firebase, then download `google-services.json` again. The Firebase project id in `.firebaserc` is `hisab-boi-5af26`.
 
 ### 3. Maps key
 
@@ -192,7 +192,7 @@ cd functions && npm test
 
 1. Firebase প্রজেক্ট বানান। Android অ্যাপের প্যাকেজ `com.hisabboi.app`।
 2. `app/google-services.json` প্লেসহোল্ডার ফাইলটি নতুন ফাইল দিয়ে বদলান।
-3. Authentication-এ Google চালু করুন। ডিবাগ SHA-1 হলো `81:59:C2:4B:0F:17:23:CF:56:A2:5C:E1:ED:9E:7D:CF:07:68:BF:9E` (`app/debug.keystore`)। Firebase প্রজেক্ট আইডি `hisab--boi`। ফাংশন রিজিয়ন `asia-south1`।
+3. Authentication-এ Google চালু করুন। ডিবাগ SHA-1 হলো `81:59:C2:4B:0F:17:23:CF:56:A2:5C:E1:ED:9E:7D:CF:07:68:BF:9E` (`app/debug.keystore`)। Firebase প্রজেক্ট আইডি `hisab-boi-5af26`। ফাংশন রিজিয়ন `asia-south1`।
 4. Firestore, Storage, Cloud Messaging চালু করুন।
 5. `local.properties`-এ `MAPS_API_KEY` দিন (ম্যাপের জন্য)। কী কমিট করবেন না।
 6. `firebase deploy --only firestore:rules,firestore:indexes,storage`

@@ -1,33 +1,41 @@
 {
   "project_info": {
-    "project_number": "100000000001",
-    "project_id": "hisab-boi-placeholder",
-    "storage_bucket": "hisab-boi-placeholder.appspot.com"
+    "project_number": "478597849141",
+    "project_id": "hisab-boi-5af26",
+    "storage_bucket": "hisab-boi-5af26.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:100000000001:android:a1b2c3d4e5f60718293a4b",
+        "mobilesdk_app_id": "1:478597849141:android:3ce96fd100b1509f5fd17c",
         "android_client_info": {
           "package_name": "com.hisabboi.app"
         }
       },
       "oauth_client": [
         {
-          "client_id": "100000000001-placeholder0000000000000000.apps.googleusercontent.com",
+          "client_id": "478597849141-c81m3ltprt5765mrm3f8quq1vgonjtq8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hisabboi.app",
+            "certificate_hash": "8159c24b0f1723cf56a25ce1ed9e7dcf0768bf9e"
+          }
+        },
+        {
+          "client_id": "478597849141-800kpif34ugcg5qng36f3m3frs64v4ni.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyAPlaceholderKey0000000000000000"
+          "current_key": "AIzaSyD-9RuUPFcKU7ZQlWq4wEyXXLD0n74sVf4"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "100000000001-placeholder0000000000000000.apps.googleusercontent.com",
+              "client_id": "478597849141-800kpif34ugcg5qng36f3m3frs64v4ni.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
