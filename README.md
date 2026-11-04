@@ -121,6 +121,12 @@ PAYMENT_WEBHOOK_SECRET=
 
 `ADMIN_EMAILS` is the only place the bootstrap admin is configured. On user create, and when the app calls `refreshAdminClaim`, a verified Google email in that list receives the custom claim `admin`. The app shows the admin screen only when `request.auth.token.admin == true`. It does not compare emails on the device.
 
+### Passkeys
+
+Google sign-in goes through Credential Manager (`GetSignInWithGoogleOption`, the same path as `GetGoogleIdOption`). If that Google account is already protected by a passkey, Google's own sheet can use it. Firebase Auth has no separate passkey provider.
+
+TODO: full passkey sign-in needs a WebAuthn server on Cloud Functions, which requires the Blaze plan. This project stays on Spark, so that backend is not included.
+
 For production, prefer a secret instead of a plain env value:
 
 ```bash

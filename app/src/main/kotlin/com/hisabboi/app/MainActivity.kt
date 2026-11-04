@@ -4,7 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -104,6 +104,7 @@ import com.hisabboi.model.AuthGateway
 import com.hisabboi.model.LockStore
 import com.hisabboi.model.TokenRepository
 import com.hisabboi.security.LockScreen
+import com.hisabboi.security.QuickUnlockScreen
 import com.hisabboi.model.NoticeKind
 import com.hisabboi.model.UserFacingError
 import com.hisabboi.ui.Avatar
@@ -118,7 +119,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     @Inject lateinit var lock: LockStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -197,6 +198,7 @@ private fun Root(lock: LockStore, shopLink: String?, viewModel: RootViewModel = 
     val active by viewModel.active.collectAsStateWithLifecycle()
     val lockState by lock.snapshot.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var quickPassed by androidx.compose.runtime.remember(user?.uid) { androidx.compose.runtime.mutableStateOf(false) }
     val notify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(user?.uid) {
         if (user != null && Build.VERSION.SDK_INT >= 33) notify.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -209,6 +211,8 @@ private fun Root(lock: LockStore, shopLink: String?, viewModel: RootViewModel = 
             onGoogle = { viewModel.signIn(context as Activity) },
             onRetry = { viewModel.signIn(context as Activity) },
         )
+        user != null && lockState.quickUnlock && !lockState.locked && !quickPassed && !viewModel.resetPin.value ->
+            QuickUnlockScreen(onUnlocked = { quickPassed = true })
         lockState.locked && !viewModel.resetPin.value -> LockScreen(
             lock = lock,
             resetMode = false,
@@ -375,7 +379,7 @@ private fun AppScaffold(
                 )
             }
             composable("pin-reset") {
-                val root: RootViewModel = hiltViewModel(LocalContext.current as ComponentActivity)
+                val root: RootViewModel = hiltViewModel(LocalContext.current as FragmentActivity)
                 val activity = LocalContext.current as Activity
                 LaunchedEffect(Unit) { root.resetWithGoogle(activity) }
                 SimpleScaffold("পিন রিসেট", onBack = { nav.popBackStack() }) {

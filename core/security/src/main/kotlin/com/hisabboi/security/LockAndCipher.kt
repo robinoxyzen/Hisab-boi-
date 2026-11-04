@@ -4,7 +4,6 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import androidx.biometric.BiometricManager
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.hisabboi.model.FieldCipher
@@ -26,6 +25,7 @@ import javax.inject.Singleton
 class LockStoreImpl @Inject constructor(
     @ApplicationContext context: Context,
 ) : LockStore {
+    private val appContext = context
     private val prefs = EncryptedSharedPreferences.create(
         context,
         "hisab_lock",
@@ -33,9 +33,6 @@ class LockStoreImpl @Inject constructor(
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
-    private val biometricAvailable =
-        BiometricManager.from(context).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
-            BiometricManager.BIOMETRIC_SUCCESS
     private var backgroundAt = 0L
     private val _snapshot = MutableStateFlow(read())
     override val snapshot: StateFlow<LockSnapshot> = _snapshot
@@ -86,24 +83,47 @@ class LockStoreImpl @Inject constructor(
 
     override fun unlock() = publish(locked = false)
 
+    override fun refreshBiometrics() {
+        publish(locked = _snapshot.value.locked)
+    }
+
+    override fun setQuickUnlock(enabled: Boolean) {
+        prefs.edit().putBoolean("quickUnlock", enabled).apply()
+        publish(locked = _snapshot.value.locked)
+    }
+
     override fun lockNow() {
         if (mode() != LockMode.OFF && pinSet()) publish(locked = true)
     }
 
     private fun publish(locked: Boolean) {
+        val bio = AppBiometric.status(appContext)
         _snapshot.value = LockSnapshot(
             mode = mode(),
             pinSet = pinSet(),
             locked = locked && mode() != LockMode.OFF && pinSet(),
             timeoutSec = timeout(),
-            biometricAvailable = biometricAvailable,
+            biometricAvailable = bio.enrolled,
+            biometricHardware = bio.hardware,
+            quickUnlock = quickUnlock(),
         )
     }
 
     private fun read(): LockSnapshot {
         val shouldLock = mode() != LockMode.OFF && pinSet()
-        return LockSnapshot(mode(), pinSet(), shouldLock, timeout(), biometricAvailable)
+        val bio = runCatching { AppBiometric.status(appContext) }.getOrDefault(BioStatus(false, false, false))
+        return LockSnapshot(
+            mode(),
+            pinSet(),
+            shouldLock,
+            timeout(),
+            bio.enrolled,
+            bio.hardware,
+            quickUnlock(),
+        )
     }
+
+    private fun quickUnlock(): Boolean = prefs.getBoolean("quickUnlock", false)
 
     private fun mode(): LockMode =
         runCatching { LockMode.valueOf(prefs.getString("mode", "OFF") ?: "OFF") }.getOrDefault(LockMode.OFF)

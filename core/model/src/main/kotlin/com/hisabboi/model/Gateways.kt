@@ -159,6 +159,8 @@ interface LockStore {
     fun onForeground()
     fun unlock()
     fun lockNow()
+    fun refreshBiometrics()
+    fun setQuickUnlock(enabled: Boolean)
 }
 
 data class LockSnapshot(
@@ -166,5 +168,10 @@ data class LockSnapshot(
     val pinSet: Boolean = false,
     val locked: Boolean = false,
     val timeoutSec: Int = 60,
+    /** A fingerprint can be used right now. */
     val biometricAvailable: Boolean = false,
+    /** The device has a biometric sensor, even if nothing is enrolled yet. */
+    val biometricHardware: Boolean = false,
+    /** Optional fingerprint gate for a returning signed-in user. Does not replace Google sign-in. */
+    val quickUnlock: Boolean = false,
 )

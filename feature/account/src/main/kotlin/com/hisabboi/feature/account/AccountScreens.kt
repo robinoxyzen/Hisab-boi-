@@ -123,6 +123,7 @@ class AccountViewModel @Inject constructor(
     var smsDraft by mutableStateOf("device")
     var notifyDraft by mutableStateOf(true)
     var modeDraft by mutableStateOf(LockMode.OFF)
+    var quickDraft by mutableStateOf(false)
     var draftsReady by mutableStateOf(false)
     var photoBusy by mutableStateOf(false)
     var photoNotice by mutableStateOf<String?>(null)
@@ -132,6 +133,7 @@ class AccountViewModel @Inject constructor(
     private var savedNotify = true
     private var savedMode = LockMode.OFF
     private var savedTimeout = 60
+    private var savedQuick = false
     private val _saved = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val savedEvents = _saved.asSharedFlow()
 
@@ -142,9 +144,12 @@ class AccountViewModel @Inject constructor(
             val snap = lock.snapshot.value
             savedMode = snap.mode
             savedTimeout = snap.timeoutSec
+            savedQuick = snap.quickUnlock
+            lock.refreshBiometrics()
             smsDraft = savedSms
             notifyDraft = savedNotify
             modeDraft = savedMode
+            quickDraft = savedQuick
             timeout = savedTimeout.toString()
             draftsReady = true
         }
@@ -251,13 +256,18 @@ class AccountViewModel @Inject constructor(
                 settings.setSmsMode(input.sms)
                 settings.setNotifications(input.notifications)
                 val digits = input.pin.filter { it.isDigit() }
+                if (input.mode == LockMode.PIN_AND_BIOMETRIC && !lock.snapshot.value.biometricHardware) {
+                    error("এই ফোনে আঙুলের ছাপ সমর্থিত নয়।")
+                }
                 if (input.mode != LockMode.OFF && digits.isNotBlank()) lock.setPin(digits)
                 lock.setMode(input.mode, input.timeout.toInt())
+                lock.setQuickUnlock(quickDraft)
             }.onSuccess {
                 savedSms = input.sms
                 savedNotify = input.notifications
                 savedMode = input.mode
                 savedTimeout = input.timeout.toInt()
+                savedQuick = quickDraft
                 pin = ""
                 confirmPin = ""
                 message = null
@@ -368,8 +378,19 @@ fun SettingsScreen(
             snackbar.showStatus(NoticeKind.SUCCESS, text)
         }
     }
+    val context = LocalContext.current
     val input = viewModel.settingsInput()
-    val dirty = viewModel.draftsReady && SettingsDraft.dirty(input)
+    val hardware = lock.biometricHardware
+    val dirty = viewModel.draftsReady && (SettingsDraft.dirty(input) || viewModel.quickDraft != lock.quickUnlock)
+    fun confirmBiometric(onOk: () -> Unit) {
+        com.hisabboi.security.AppBiometric.authenticate(
+            context,
+            title = "আঙুলের ছাপ যাচাই",
+            subtitle = "চালু করার আগে একবার ছাপ দিন",
+            onSuccess = onOk,
+            onError = { viewModel.message = it },
+        )
+    }
     androidx.compose.material3.Scaffold(
         snackbarHost = { com.hisabboi.ui.StatusSnackbarHost(snackbar) },
         topBar = {
@@ -410,11 +431,37 @@ fun SettingsScreen(
                 }
             }
             com.hisabboi.ui.SectionCard("অ্যাপ লক") {
-                ChipRow(listOf(
-                    "বন্ধ" to (viewModel.modeDraft == LockMode.OFF),
-                    "পিন" to (viewModel.modeDraft == LockMode.PIN),
-                    "পিন + আঙুল" to (viewModel.modeDraft == LockMode.PIN_AND_BIOMETRIC),
-                )) { viewModel.modeDraft = LockMode.entries[it] }
+                val choices = buildList {
+                    add(LockMode.OFF to "বন্ধ")
+                    add(LockMode.PIN to "পিন")
+                    if (hardware) add(LockMode.PIN_AND_BIOMETRIC to "পিন + আঙুল")
+                }
+                ChipRow(choices.map { (mode, label) -> label to (viewModel.modeDraft == mode) }) { index ->
+                    val picked = choices[index].first
+                    if (picked == LockMode.PIN_AND_BIOMETRIC && viewModel.modeDraft != LockMode.PIN_AND_BIOMETRIC) {
+                        confirmBiometric { viewModel.modeDraft = picked }
+                    } else {
+                        viewModel.modeDraft = picked
+                    }
+                }
+                if (hardware) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("আঙুলের ছাপ দিয়ে লগইন", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = viewModel.quickDraft,
+                            onCheckedChange = { enabled ->
+                                if (enabled) confirmBiometric { viewModel.quickDraft = true }
+                                else viewModel.quickDraft = false
+                            },
+                        )
+                    }
+                    Text("গুগল সেশন থাকে। অ্যাপ খুললে শুধু আঙুল চায়।")
+                }
+                if (hardware && !lock.biometricAvailable) {
+                    TextButton(onClick = {
+                        runCatching { context.startActivity(com.hisabboi.security.AppBiometric.enrollIntent()) }
+                    }) { Text("সেটিংসে আঙুলের ছাপ যোগ করুন") }
+                }
                 if (viewModel.modeDraft != LockMode.OFF) {
                     OutlinedTextField(
                         viewModel.pin,

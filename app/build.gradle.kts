@@ -22,8 +22,8 @@ android {
         applicationId = "com.hisabboi.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.2"
+        versionCode = 3
+        versionName = "0.1.3"
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
     }
@@ -74,6 +74,7 @@ dependencies {
     implementation(project(":feature:account"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.fragment)
     implementation(libs.activity.compose)
     implementation(libs.navigation.compose)
     implementation(libs.lifecycle.runtime.compose)

@@ -137,6 +137,24 @@ class ShopLogicTest {
     }
 
     @Test
+    fun biometricStatusReadsHardwareAndEnrollment() {
+        val ready = BiometricRead.status(BiometricRead.SUCCESS, BiometricRead.SUCCESS)
+        assertTrue(ready.hardware)
+        assertTrue(ready.enrolled)
+        assertTrue(ready.useStrong)
+        val weakOnly = BiometricRead.status(BiometricRead.NONE_ENROLLED, BiometricRead.SUCCESS)
+        assertTrue(weakOnly.hardware)
+        assertTrue(weakOnly.enrolled)
+        assertFalse(weakOnly.useStrong)
+        val empty = BiometricRead.status(BiometricRead.NONE_ENROLLED, BiometricRead.NONE_ENROLLED)
+        assertTrue(empty.hardware)
+        assertFalse(empty.enrolled)
+        val missing = BiometricRead.status(BiometricRead.NO_HARDWARE, BiometricRead.UNSUPPORTED)
+        assertFalse(missing.hardware)
+        assertFalse(missing.enrolled)
+    }
+
+    @Test
     fun centerSquareCropAndEdge() {
         assertEquals(Triple(50, 0, 100), ImageFrame.centerSquare(200, 100))
         assertEquals(Triple(0, 40, 80), ImageFrame.centerSquare(80, 160))

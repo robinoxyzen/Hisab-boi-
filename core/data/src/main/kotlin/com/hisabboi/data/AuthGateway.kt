@@ -62,6 +62,9 @@ class GoogleAuthGateway @Inject constructor(
             if (clientId.isBlank() || clientId.contains("placeholder")) {
                 error("google-services.json এখনো প্লেসহোল্ডার। README অনুযায়ী Firebase ও Google সাইন-ইন সেটআপ করুন।")
             }
+            // Credential Manager. GetSignInWithGoogleOption (same family as GetGoogleIdOption)
+            // lets Google use a passkey that already protects this Google account.
+            // There is no separate WebAuthn server in this app.
             val option = GetSignInWithGoogleOption.Builder(clientId).build()
             val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
             val result = credentialManager.getCredential(activity, request)

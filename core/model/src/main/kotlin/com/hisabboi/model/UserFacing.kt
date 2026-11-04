@@ -280,6 +280,28 @@ object CashBook {
     }
 }
 
+/**
+ * Platform biometric status codes. Kept here so the decision can be tested without Android.
+ * Values match androidx.biometric.BiometricManager.
+ */
+object BiometricRead {
+    const val SUCCESS = 0
+    const val NONE_ENROLLED = 11
+    const val NO_HARDWARE = 12
+    const val UNSUPPORTED = -2
+
+    data class Status(val hardware: Boolean, val enrolled: Boolean, val useStrong: Boolean)
+
+    fun status(strong: Int, weak: Int): Status {
+        fun sensor(code: Int) = code != NO_HARDWARE && code != UNSUPPORTED
+        return Status(
+            hardware = sensor(strong) || sensor(weak),
+            enrolled = strong == SUCCESS || weak == SUCCESS,
+            useStrong = strong == SUCCESS,
+        )
+    }
+}
+
 object LedgerList {
     fun lastDates(transactions: List<LedgerTx>): Map<String, Long> =
         transactions.filter { !it.deleted && it.contactId.isNotBlank() }
