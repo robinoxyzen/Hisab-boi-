@@ -10,9 +10,14 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Source
 import com.google.firebase.functions.FirebaseFunctions
 import com.hisabboi.model.AuthGateway
+import com.hisabboi.model.ProfilePhoto
+import com.hisabboi.model.ProfileRead
 import com.hisabboi.model.SessionUser
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -20,9 +25,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -66,7 +73,9 @@ class GoogleAuthGateway @Inject constructor(
             val firebaseCred = GoogleAuthProvider.getCredential(google.idToken, null)
             val signed = auth.signInWithCredential(firebaseCred).await()
             val user = signed.user ?: error("সাইন-ইন সম্পূর্ণ হয়নি")
-            ensureProfile(user)
+            // A missing or unreachable user document must not block sign-in.
+            // The shopkeeper continues to onboarding when there is no business yet.
+            runCatching { ensureProfile(user) }
             runCatching { refreshAdminClaim() }
             publish(user, forceRefresh = true)
             _user.value ?: error("সেশন তৈরি হয়নি")
@@ -93,34 +102,109 @@ class GoogleAuthGateway @Inject constructor(
         _user.value = null
     }
 
+    override fun applyLocalPhoto(custom: String?, hideGoogle: Boolean) {
+        val current = _user.value ?: return
+        val uploaded = custom?.takeIf { ProfilePhoto.isUploaded(it) }
+        val hide = hideGoogle && uploaded == null
+        _user.value = current.copy(
+            customPhotoUrl = uploaded,
+            hideGooglePhoto = hide,
+            photoUrl = ProfilePhoto.resolve(uploaded, current.googlePhotoUrl, hide),
+        )
+    }
+
     private suspend fun publish(user: FirebaseUser?, forceRefresh: Boolean) {
         if (user == null) {
             _user.value = null
             return
         }
         val token = runCatching { user.getIdToken(forceRefresh).await() }.getOrNull()
+        val google = user.photoUrl?.toString()
+        val prefs = readPhotoPrefs(user.uid)
+        val custom = prefs.stored?.takeIf { ProfilePhoto.isUploaded(it) }
         _user.value = SessionUser(
             uid = user.uid,
             email = user.email,
             displayName = user.displayName,
-            photoUrl = user.photoUrl?.toString(),
+            photoUrl = ProfilePhoto.resolve(prefs.stored, google, prefs.hideGoogle),
             isAdmin = token?.claims?.get("admin") == true,
+            googlePhotoUrl = google,
+            customPhotoUrl = custom,
+            hideGooglePhoto = prefs.hideGoogle && custom == null,
         )
     }
 
+    /**
+     * Reads users/{uid} with a short retry. Offline, cache, or a brand-new database
+     * all resolve to "continue" instead of failing the Google sign-in.
+     */
     private suspend fun ensureProfile(user: FirebaseUser) {
         val ref = db.collection("users").document(user.uid)
-        val snap = ref.get().await()
-        if (!snap.exists()) {
+        when (readProfile(ref)) {
+            ProfileHit.Exists -> Unit
+            ProfileHit.Missing -> createProfile(ref, user)
+            ProfileHit.Unknown -> Unit
+        }
+    }
+
+    private enum class ProfileHit { Exists, Missing, Unknown }
+
+    private suspend fun readProfile(ref: DocumentReference): ProfileHit {
+        val max = 3
+        var attempt = 0
+        while (attempt < max) {
+            val server = runCatching { withTimeout(4_000) { ref.get(Source.SERVER).await() } }
+            if (server.isSuccess) {
+                return if (server.getOrThrow().exists()) ProfileHit.Exists else ProfileHit.Missing
+            }
+            val cached = runCatching { ref.get(Source.CACHE).await() }.getOrNull()
+            when (
+                ProfileRead.next(
+                    serverSucceeded = false,
+                    serverExists = false,
+                    cacheExists = cached?.exists() == true,
+                    transient = ProfileRead.isTransient(server.exceptionOrNull()?.message),
+                    attempt = attempt,
+                    maxAttempts = max,
+                )
+            ) {
+                ProfileRead.Step.USE_CACHE -> return ProfileHit.Exists
+                ProfileRead.Step.RETRY -> {
+                    attempt++
+                    delay(400L * attempt)
+                }
+                else -> return ProfileHit.Unknown
+            }
+        }
+        return ProfileHit.Unknown
+    }
+
+    private suspend fun createProfile(ref: DocumentReference, user: FirebaseUser) {
+        runCatching {
             ref.set(
                 mapOf(
-                    "email" to user.email,
+                    "email" to (user.email ?: ""),
                     "displayName" to (user.displayName ?: ""),
-                    "photoUrl" to user.photoUrl?.toString(),
                     "createdAt" to System.currentTimeMillis(),
                 ),
+                SetOptions.merge(),
             ).await()
         }
+    }
+
+    private data class PhotoPrefs(val stored: String?, val hideGoogle: Boolean)
+
+    private suspend fun readPhotoPrefs(uid: String): PhotoPrefs {
+        val ref = db.collection("users").document(uid)
+        val cached = runCatching { ref.get(Source.CACHE).await() }.getOrNull()
+        if (cached != null && cached.exists()) {
+            return PhotoPrefs(cached.getString("photoUrl"), cached.getBoolean("hideGooglePhoto") == true)
+        }
+        val server = runCatching { withTimeout(2_500) { ref.get(Source.SERVER).await() } }.getOrNull()
+        if (server != null && server.exists()) {
+            return PhotoPrefs(server.getString("photoUrl"), server.getBoolean("hideGooglePhoto") == true)
+        }
+        return PhotoPrefs(null, false)
     }
 
     private fun webClientId(): String {

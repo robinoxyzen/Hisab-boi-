@@ -54,7 +54,12 @@ class SessionRepositoryImpl @Inject constructor(
                 launch { runCatching { auth.refreshAdminClaim() } }
                 registration = db.collection("users").document(session.uid).collection("businesses")
                     .addSnapshotListener { snap, err ->
-                        if (err != null || snap == null) return@addSnapshotListener
+                        if (err != null || snap == null) {
+                            // A new or unreachable database must not trap the shopkeeper on a blank screen.
+                            _offline.value = true
+                            _ready.value = true
+                            return@addSnapshotListener
+                        }
                         _offline.value = snap.metadata.isFromCache
                         _businesses.value = snap.documents.map { it.toBusiness() }
                         if (!snap.metadata.isFromCache || _businesses.value.isNotEmpty()) {

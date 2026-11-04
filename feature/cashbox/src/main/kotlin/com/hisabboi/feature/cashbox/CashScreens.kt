@@ -110,17 +110,30 @@ class CashViewModel @Inject constructor(
 fun CashboxScreen(onAdd: (String) -> Unit, viewModel: CashViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    SimpleScaffold("ক্যাশবক্স") { padding ->
+    val day = BnDate.startOfDay()
+    val book = com.hisabboi.model.CashBook.todayWithRunning(state.rows, day)
+    SimpleScaffold("ক্যাশ") { padding ->
         LazyColumn(Modifier.padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatTile("আজকের বিক্রি", state.sales, true, Modifier.weight(1f))
-                    StatTile("বর্তমান ক্যাশ", state.cash, state.cash >= 0, Modifier.weight(1f))
+                androidx.compose.material3.Card(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("চলতি ব্যালেন্স", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            Money.format(state.cash),
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = if (state.cash >= 0) com.hisabboi.ui.Receive else com.hisabboi.ui.Payable,
+                        )
+                    }
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatTile("আজ পেলাম", state.inn, true, Modifier.weight(1f))
-                    StatTile("আজ দিলাম", state.out, false, Modifier.weight(1f))
+                    StatTile("আজ ঢুকলো", state.inn, true, Modifier.weight(1f))
+                    StatTile("আজ বেরোলো", state.out, false, Modifier.weight(1f))
                 }
+                com.hisabboi.ui.StatusBanner(
+                    com.hisabboi.model.NoticeKind.INFO,
+                    "টাকা আপনার ক্যাশে থাকে। অ্যাপ কোনো টাকা গ্রহণ করে না।",
+                    Modifier.padding(top = 8.dp),
+                )
                 Text("নতুন এন্ট্রি", modifier = Modifier.padding(top = 12.dp))
                 CashKind.entries.forEach { kind ->
                     ListItem(
@@ -132,13 +145,20 @@ fun CashboxScreen(onAdd: (String) -> Unit, viewModel: CashViewModel = hiltViewMo
                     val bytes = Files.pdf(context, "ক্যাশ রিপোর্ট", viewModel.lines())
                     Files.share(context, "cash.pdf", bytes, "application/pdf")
                 }) { Text("আজকের রিপোর্ট") }
+                Text("আজকের খাতা", modifier = Modifier.padding(top = 8.dp))
             }
-            if (state.rows.isEmpty()) item { EmptyHint("ক্যাশ খালি", "বিক্রি, কেনা, খরচ বা মালিকের জমা-তোলা যোগ করুন।") }
-            items(state.rows, key = { it.id }) { entry ->
+            if (book.isEmpty()) item { EmptyHint("আজ ক্যাশ খালি", "বিক্রি, কেনা, খরচ বা মালিকের জমা-তোলা যোগ করুন।") }
+            items(book, key = { it.first.id }) { (entry, running) ->
                 ListItem(
-                    headlineContent = { Text("${entry.kind.label()} · ${Money.format(entry.amount)}") },
-                    supportingContent = { Text("${BnDate.format(entry.dateMillis)} ${entry.note}") },
-                    trailingContent = { TextButton(onClick = { viewModel.remove(entry) }) { Text("মুছুন") } },
+                    headlineContent = { Text(entry.kind.label()) },
+                    supportingContent = { Text("${BnDate.formatTime(entry.dateMillis)} ${entry.note}") },
+                    trailingContent = {
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(Money.format(entry.amount), color = if (entry.kind.signed(1.0) >= 0) com.hisabboi.ui.Receive else com.hisabboi.ui.Payable)
+                            Text("ব্যালেন্স ${Money.format(running)}", style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { viewModel.remove(entry) }) { Text("মুছুন") }
+                        }
+                    },
                 )
             }
         }
@@ -164,6 +184,10 @@ class CashEntryViewModel @Inject constructor(
                 if (payload == null) return@collect
                 items += payload.items
                 note = items.asNote()
+                val suggested = payload.suggestedAmount
+                if (suggested != null && suggested > 0 && amount.isBlank()) {
+                    amount = com.hisabboi.model.AmountKeypad.plain(suggested)
+                }
                 scanBus.consume(payload.id)
             }
         }

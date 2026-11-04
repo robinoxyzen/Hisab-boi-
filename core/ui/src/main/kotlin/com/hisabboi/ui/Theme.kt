@@ -37,16 +37,26 @@ private val Light = lightColorScheme(
     onSurface = Ink,
     onBackground = Ink,
     error = Payable,
+    errorContainer = Color(0xFFFDECEC),
+    onErrorContainer = Color(0xFF7A1F1F),
 )
 
 private val Dark = darkColorScheme(
     primary = Color(0xFF7DDEC8),
     onPrimary = Color(0xFF00382E),
     primaryContainer = Color(0xFF0E5346),
+    onPrimaryContainer = Color(0xFFD5F3EA),
     secondary = Color(0xFFC5D2F6),
+    onSecondary = Color(0xFF14284F),
     background = Color(0xFF101614),
+    onBackground = Color(0xFFE4EEEA),
     surface = Color(0xFF18211E),
+    onSurface = Color(0xFFE4EEEA),
+    surfaceVariant = Color(0xFF24302C),
+    onSurfaceVariant = Color(0xFFB7C9C2),
     error = Color(0xFFFFB4AB),
+    errorContainer = Color(0xFF3F2322),
+    onErrorContainer = Color(0xFFFFDAD6),
 )
 
 private val Bengali = FontFamily(Font(R.font.noto_sans_bengali, FontWeight.Normal))

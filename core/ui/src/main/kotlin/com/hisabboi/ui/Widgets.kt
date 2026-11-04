@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
@@ -14,6 +15,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,10 +50,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
+import androidx.exifinterface.media.ExifInterface
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import com.hisabboi.model.ImageFrame
 import com.hisabboi.model.Money
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 
@@ -80,15 +87,19 @@ fun Avatar(name: String, photo: String, modifier: Modifier = Modifier) {
         modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
     ) {
-        if (photo.isNotBlank()) {
-            val bytes = runCatching { Base64.decode(photo, Base64.DEFAULT) }.getOrNull()
-            if (bytes != null) {
-                AsyncImage(model = bytes, contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
-            } else {
-                Text(letter, color = MaterialTheme.colorScheme.onPrimaryContainer)
-            }
-        } else {
-            Text(letter, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        Text(letter, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        val model: Any? = when {
+            photo.startsWith("https://") || photo.startsWith("http://") -> photo
+            photo.isNotBlank() -> runCatching { Base64.decode(photo, Base64.DEFAULT) }.getOrNull()
+            else -> null
+        }
+        if (model != null) {
+            AsyncImage(
+                model = model,
+                contentDescription = name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
         }
     }
 }
@@ -165,7 +176,13 @@ fun ChipRow(labels: List<Pair<String, Boolean>>, onPick: (Int) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SimpleScaffold(title: String, onBack: (() -> Unit)? = null, content: @Composable (androidx.compose.foundation.layout.PaddingValues) -> Unit) {
+fun SimpleScaffold(
+    title: String,
+    onBack: (() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+    floatingActionButton: @Composable () -> Unit = {},
+    content: @Composable (PaddingValues) -> Unit,
+) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -175,9 +192,17 @@ fun SimpleScaffold(title: String, onBack: (() -> Unit)? = null, content: @Compos
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "ফিরে যান") }
                     }
                 },
+                actions = actions,
             )
         },
-    ) { padding -> content(padding) }
+        floatingActionButton = floatingActionButton,
+    ) { padding ->
+        // Always inset the body. Callers receive zero padding so a missed
+        // Modifier.padding cannot draw the screen under the top bar.
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            content(PaddingValues())
+        }
+    }
 }
 
 @Composable
@@ -297,6 +322,13 @@ object Files {
         context.startActivity(Intent(Intent.ACTION_VIEW, uri))
     }
 
+    fun cameraCaptureUri(context: Context): Uri {
+        val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = File(dir, "profile.jpg")
+        if (!file.exists()) file.createNewFile()
+        return FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+    }
+
     fun directions(context: Context, lat: Double, lng: Double) {
         val uri = Uri.parse("google.navigation:q=$lat,$lng")
         val intent = Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.apps.maps")
@@ -343,6 +375,48 @@ object Images {
             android.graphics.BitmapFactory.decodeStream(it, null, opts)
         } ?: return ""
         return jpeg(bitmap, maxEdge, quality)
+    }
+
+    /** Center-crops to a square, scales to about 512px, and returns JPEG bytes. */
+    fun squareJpegBytes(context: Context, uri: Uri, maxEdge: Int = 512, quality: Int = 72): ByteArray {
+        val raw = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return ByteArray(0)
+        if (raw.isEmpty()) return ByteArray(0)
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return ByteArray(0)
+        val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        var sample = 1
+        while (longEdge / sample > maxEdge * 2) sample *= 2
+        val decoded = android.graphics.BitmapFactory.decodeByteArray(
+            raw,
+            0,
+            raw.size,
+            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+        ) ?: return ByteArray(0)
+        val upright = rotate(decoded, exifDegrees(raw))
+        val (x, y, side) = ImageFrame.centerSquare(upright.width, upright.height)
+        val cropped = Bitmap.createBitmap(upright, x, y, side, side)
+        val edge = ImageFrame.targetEdge(side, maxEdge)
+        val scaled = if (edge != side) Bitmap.createScaledBitmap(cropped, edge, edge, true) else cropped
+        val stream = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(40, 90), stream)
+        return stream.toByteArray()
+    }
+
+    private fun exifDegrees(bytes: ByteArray): Int = runCatching {
+        val exif = ExifInterface(ByteArrayInputStream(bytes))
+        when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+            ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_TRANSPOSE -> 90
+            ExifInterface.ORIENTATION_ROTATE_180, ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180
+            ExifInterface.ORIENTATION_ROTATE_270, ExifInterface.ORIENTATION_TRANSVERSE -> 270
+            else -> 0
+        }
+    }.getOrDefault(0)
+
+    private fun rotate(bitmap: Bitmap, degrees: Int): Bitmap {
+        if (degrees == 0) return bitmap
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
     fun jpeg(bitmap: Bitmap, maxEdge: Int, quality: Int): String {

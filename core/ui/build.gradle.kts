@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.paparazzi)
 }
 
 android {
@@ -24,8 +25,11 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.icons)
+    implementation(libs.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.coil)
+    implementation(libs.exifinterface)
     implementation(libs.zxing)
     coreLibraryDesugaring(libs.desugar)
+    testImplementation(libs.junit)
 }

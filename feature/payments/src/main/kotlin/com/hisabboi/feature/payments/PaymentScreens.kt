@@ -224,7 +224,11 @@ fun QrScreen(viewModel: QrViewModel = hiltViewModel()) {
                 }
             }
             PrimaryButton("পেমেন্ট পেয়েছি", { viewModel.confirmReceived(chosen) }, Money.parse(viewModel.amount) != null)
-            viewModel.message?.let { Text(it) }
+            com.hisabboi.ui.ResultBanner(viewModel.message)
+            com.hisabboi.ui.StatusBanner(
+                com.hisabboi.model.NoticeKind.INFO,
+                "কাস্টমার সরাসরি আপনার অ্যাকাউন্টে টাকা দেয়। হিসাব বই কোনো পেমেন্ট গ্রহণ করে না।",
+            )
         }
     }
 }

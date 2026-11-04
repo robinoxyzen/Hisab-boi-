@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -122,7 +123,7 @@ class ShopEditorViewModel @Inject constructor(
 }
 
 @Composable
-fun BusinessEditorScreen(onBack: () -> Unit, mapsKey: String, viewModel: ShopEditorViewModel = hiltViewModel()) {
+fun BusinessEditorScreen(onBack: () -> Unit, mapsKey: String, onVerify: () -> Unit = {}, viewModel: ShopEditorViewModel = hiltViewModel()) {
     val business by viewModel.active.collectAsStateWithLifecycle()
     val context = LocalContext.current
     LaunchedOnce(business) { if (it != null) viewModel.load(it) }
@@ -143,6 +144,12 @@ fun BusinessEditorScreen(onBack: () -> Unit, mapsKey: String, viewModel: ShopEdi
             Modifier.padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(business?.name?.ifBlank { null } ?: "দোকান", style = androidx.compose.material3.MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f, fill = false))
+                business?.let { shop ->
+                    com.hisabboi.ui.ShopVerifyMark(shop.verified, shop.verificationStatus, onVerify = onVerify)
+                }
+            }
             OutlinedTextField(viewModel.name, { viewModel.name = it }, label = { Text("ব্যবসার নাম") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(viewModel.owner, { viewModel.owner = it }, label = { Text("মালিকের নাম") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(viewModel.phone, { viewModel.phone = it }, label = { Text("ফোন") }, modifier = Modifier.fillMaxWidth())
@@ -178,7 +185,7 @@ fun BusinessEditorScreen(onBack: () -> Unit, mapsKey: String, viewModel: ShopEdi
                     Files.shareText(context, "${biz.name}\n$link")
                 }) { Text("দোকান পেজের লিংক") }
             }
-            viewModel.message?.let { Text(it) }
+            com.hisabboi.ui.ResultBanner(viewModel.message)
         }
     }
 }
@@ -225,7 +232,7 @@ class PublicShopViewModel @Inject constructor(
 fun PublicShopScreen(shopId: String, onBack: () -> Unit, viewModel: PublicShopViewModel = hiltViewModel()) {
     val shop by viewModel.shop(shopId).collectAsStateWithLifecycle()
     val context = LocalContext.current
-    SimpleScaffold(shop?.name ?: "দোকান", onBack) { padding ->
+    SimpleScaffold("দোকান", onBack) { padding ->
         val place = shop
         if (place == null) {
             Column(Modifier.padding(padding)) {
@@ -233,8 +240,8 @@ fun PublicShopScreen(shopId: String, onBack: () -> Unit, viewModel: PublicShopVi
             }
         } else {
             Column(Modifier.padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.hisabboi.ui.NameWithSeal(place.name, place.verified, style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
                 Text(place.type.label())
-                if (place.verified) Text("ভেরিফাইড দোকান")
                 Text(place.address)
                 Text(place.phone)
                 Text(place.openingHours)
@@ -301,7 +308,7 @@ fun NearbyScreen(onBack: () -> Unit, onOpen: (String) -> Unit, mapsKey: String, 
                         if (lat != null && lng != null) Money.digits("%.1f কিমি".format(Geo.km(here.first, here.second, lat, lng))) else ""
                     }.orEmpty()
                     ListItem(
-                        headlineContent = { Text(shop.name + if (shop.verified) "  · ভেরিফাইড" else "") },
+                        headlineContent = { com.hisabboi.ui.NameWithSeal(shop.name, shop.verified) },
                         supportingContent = { Text("${shop.address} $distance") },
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                         trailingContent = { TextButton(onClick = { onOpen(shop.id) }) { Text("দেখুন") } },

@@ -82,8 +82,12 @@ data class SessionUser(
     val uid: String,
     val email: String?,
     val displayName: String?,
+    /** Resolved avatar: uploaded photo, otherwise the Google photo, otherwise null (initials). */
     val photoUrl: String?,
     val isAdmin: Boolean,
+    val googlePhotoUrl: String? = null,
+    val customPhotoUrl: String? = null,
+    val hideGooglePhoto: Boolean = false,
 )
 
 data class Business(
@@ -163,10 +167,21 @@ data class CashEntry(
     val createdAt: Long = 0L,
 )
 
+data class RemoteList<T>(
+    val items: List<T> = emptyList(),
+    val loading: Boolean = true,
+    val error: String? = null,
+)
+
 data class Product(
     val id: String = "",
     val barcode: String = "",
     val name: String = "",
+    val buyPrice: Double = 0.0,
+    val sellPrice: Double = 0.0,
+    val stock: Double = 0.0,
+    val unit: String = "পিস",
+    val photoBase64: String = "",
     val deleted: Boolean = false,
     val updatedAt: Long = 0L,
 )
@@ -263,7 +278,11 @@ data class TrashBundle(
     val businesses: List<Business> = emptyList(),
 )
 
-data class ScanPayload(val id: Long, val items: List<LineItem>)
+data class ScanPayload(
+    val id: Long,
+    val items: List<LineItem>,
+    val suggestedAmount: Double? = null,
+)
 
 /** Result of a pluggable identity check. Manual admin review is the default provider. */
 data class IdentityOutcome(

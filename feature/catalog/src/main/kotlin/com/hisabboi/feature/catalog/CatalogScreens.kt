@@ -11,15 +11,25 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -31,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.camera.core.Camera
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,15 +52,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.hisabboi.model.ActiveBusinessSource
+import com.hisabboi.model.Catalog
 import com.hisabboi.model.LineItem
+import com.hisabboi.model.Money
+import com.hisabboi.model.NoticeKind
 import com.hisabboi.model.Product
 import com.hisabboi.model.ProductRepository
+import com.hisabboi.model.RemoteList
 import com.hisabboi.model.ScanBus
 import com.hisabboi.ui.EmptyHint
 import com.hisabboi.ui.PrimaryButton
@@ -60,6 +77,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
@@ -74,10 +92,11 @@ class ProductViewModel @Inject constructor(
 ) : ViewModel() {
     private val uid = session.user
     private val active = session.active
-    val catalog = session.active.flatMapLatest { biz ->
+    val catalogState = session.active.flatMapLatest { biz ->
         val id = session.user.value?.uid
-        if (biz == null || id == null) flowOf(emptyList()) else products.observe(id, biz.id)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        if (biz == null || id == null) flowOf(RemoteList(loading = false)) else products.watch(id, biz.id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RemoteList())
+    val catalog = catalogState.map { it.items }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     var lines by mutableStateOf(listOf<LineItem>())
     var unknownBarcode by mutableStateOf<String?>(null)
@@ -203,11 +222,20 @@ fun ScannerScreen(onDone: () -> Unit, viewModel: ProductViewModel = hiltViewMode
 }
 
 @Composable
-private fun CameraPreview(modifier: Modifier, onBarcode: (String) -> Unit, onText: (String) -> Unit) {
+internal fun CameraPreview(
+    modifier: Modifier,
+    torch: Boolean = false,
+    onBarcode: (String) -> Unit,
+    onText: ((String) -> Unit)? = null,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
-    val analyzer = remember { FrameAnalyzer(onBarcode, onText) }
+    val analyzer = remember(onText == null) { FrameAnalyzer(onBarcode, onText) }
+    val cameraRef = remember { mutableStateOf<Camera?>(null) }
+    LaunchedEffect(torch, cameraRef.value) {
+        runCatching { cameraRef.value?.cameraControl?.enableTorch(torch) }
+    }
     DisposableEffect(lifecycleOwner) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
@@ -219,7 +247,7 @@ private fun CameraPreview(modifier: Modifier, onBarcode: (String) -> Unit, onTex
                 .build()
             analysis.setAnalyzer(Executors.newSingleThreadExecutor(), analyzer)
             provider.unbindAll()
-            provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+            cameraRef.value = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
         }
         cameraProviderFuture.addListener(listener, executor)
         onDispose {
@@ -232,9 +260,20 @@ private fun CameraPreview(modifier: Modifier, onBarcode: (String) -> Unit, onTex
 
 private class FrameAnalyzer(
     private val onBarcode: (String) -> Unit,
-    private val onText: (String) -> Unit,
+    private val onText: ((String) -> Unit)?,
 ) : ImageAnalysis.Analyzer {
-    private val barcodes = BarcodeScanning.getClient()
+    private val barcodes = BarcodeScanning.getClient(
+        BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(
+                Barcode.FORMAT_EAN_13,
+                Barcode.FORMAT_EAN_8,
+                Barcode.FORMAT_UPC_A,
+                Barcode.FORMAT_UPC_E,
+                Barcode.FORMAT_CODE_128,
+                Barcode.FORMAT_QR_CODE,
+            )
+            .build(),
+    )
     private val latin = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val devanagari = runCatching {
         val options = com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions.Builder().build()
@@ -271,7 +310,7 @@ private class FrameAnalyzer(
                     }
                     busy = false
                     image.close()
-                } else if (now - lastTextAt > 1_500) {
+                } else if (onText != null && now - lastTextAt > 1_500) {
                     lastTextAt = now
                     readText(input, image)
                 } else {
@@ -308,7 +347,7 @@ private class FrameAnalyzer(
 
     private fun emit(first: Text, second: Text? = null) {
         val best = listOfNotNull(prominent(first), second?.let { prominent(it) }).maxByOrNull { it.length }
-        if (!best.isNullOrBlank()) onText(best)
+        if (!best.isNullOrBlank()) onText?.invoke(best)
     }
 
     private fun prominent(text: Text): String? {
@@ -321,39 +360,93 @@ private class FrameAnalyzer(
 }
 
 @Composable
-fun ProductsScreen(onBack: () -> Unit, viewModel: ProductViewModel = hiltViewModel()) {
-    val products by viewModel.catalog.collectAsStateWithLifecycle()
-    var editing by remember { mutableStateOf<Product?>(null) }
-    var name by remember { mutableStateOf("") }
-    SimpleScaffold("পণ্য তালিকা", onBack) { padding ->
-        val alive = products.filter { !it.deleted }
-        if (alive.isEmpty()) {
-            EmptyHint("কোনো পণ্য নেই", "স্ক্যান করে বারকোড সেভ করলে পরের বার নাম নিজেই বসবে।")
-        } else {
-            LazyColumn(Modifier.padding(padding)) {
-                items(alive, key = { it.id }) { product ->
-                    ListItem(
-                        headlineContent = { Text(product.name) },
-                        supportingContent = { Text(product.barcode) },
-                        trailingContent = {
-                            Row {
-                                TextButton(onClick = { editing = product; name = product.name }) { Text("বদল") }
-                                TextButton(onClick = { viewModel.remove(product) }) { Text("মুছুন") }
-                            }
-                        },
+fun ProductsScreen(
+    onBack: () -> Unit,
+    onScan: () -> Unit,
+    onCreate: () -> Unit,
+    onEdit: (Product) -> Unit,
+    viewModel: ProductViewModel = hiltViewModel(),
+) {
+    val state by viewModel.catalogState.collectAsStateWithLifecycle()
+    var query by remember { mutableStateOf("") }
+    val alive = Catalog.search(state.items, query)
+    val problem = state.error
+    SimpleScaffold(
+        title = "পণ্য তালিকা",
+        onBack = onBack,
+        actions = {
+            IconButton(onClick = onScan) {
+                Icon(Icons.Default.QrCodeScanner, contentDescription = "স্ক্যান")
+            }
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(onClick = onCreate) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("পণ্য যোগ")
+            }
+        },
+    ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                label = { Text("নাম বা বারকোড") },
+                singleLine = true,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            )
+            when {
+                state.loading && state.items.isEmpty() -> {
+                    com.hisabboi.ui.StatusBanner(
+                        NoticeKind.PENDING,
+                        "পণ্য লোড হচ্ছে…",
+                        Modifier.padding(top = 16.dp),
                     )
+                }
+                problem != null && alive.isEmpty() -> {
+                    com.hisabboi.ui.StatusBanner(NoticeKind.FAILED, problem, Modifier.padding(top = 16.dp))
+                    ProductEmptyState(onScan, onCreate)
+                }
+                alive.isEmpty() -> ProductEmptyState(onScan, onCreate)
+                else -> {
+                    if (problem != null) {
+                        com.hisabboi.ui.StatusBanner(NoticeKind.FAILED, problem, Modifier.padding(top = 8.dp))
+                    }
+                    LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 88.dp)) {
+                        items(alive, key = { it.id }) { product ->
+                            ListItem(
+                                headlineContent = { Text(product.name) },
+                                supportingContent = {
+                                    Text("${product.barcode} · ${Money.format(product.sellPrice)} · ${Catalog.stockLabel(product.stock, product.unit)}")
+                                },
+                                modifier = Modifier.clickable { onEdit(product) },
+                                trailingContent = {
+                                    TextButton(onClick = { viewModel.remove(product) }) { Text("মুছুন") }
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
     }
-    if (editing != null) {
-        AlertDialog(
-            onDismissRequest = { editing = null },
-            title = { Text("নাম") },
-            text = { OutlinedTextField(name, { name = it }) },
-            confirmButton = {
-                TextButton(onClick = { editing?.let { viewModel.rename(it, name) }; editing = null }) { Text("সেভ") }
-            },
+}
+
+@Composable
+private fun ProductEmptyState(onScan: () -> Unit, onCreate: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 24.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        com.hisabboi.ui.LedgerEmptyArt(Modifier.size(140.dp))
+        Text("এখনো কোনো পণ্য নেই", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+        Text(
+            "বারকোড স্ক্যান করুন, অথবা নাম, দাম আর স্টক হাতে লিখুন।",
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
+        PrimaryButton("স্ক্যান করুন", onScan)
+        TextButton(onClick = onCreate) { Text("হাতে যোগ করুন") }
     }
 }

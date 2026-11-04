@@ -59,17 +59,7 @@ You need Android Studio (JDK 17 or 21), an Android SDK, and a Firebase project o
 
 The debug build uses the keystore committed at `app/debug.keystore` (alias `androiddebugkey`, store and key password `android`). That keeps the debug SHA-1 the same on every machine and in CI. It is a debug key only.
 
-```text
-SHA-1: 81:59:C2:4B:0F:17:23:CF:56:A2:5C:E1:ED:9E:7D:CF:07:68:BF:9E
-```
-
-Confirm with:
-
-```bash
-./gradlew :app:signingReport
-```
-
-Add that SHA-1 (and later the release key) under the Android app in Firebase, then download `google-services.json` again. The Firebase project id in `.firebaserc` is `hisab-boi-5af26`.
+Print the certificate fingerprint with `./gradlew :app:signingReport`, add that SHA-1 (and later the release key) under the Android app in Firebase, then download `google-services.json` again. The Firebase project id in `.firebaserc` is `hisab-boi-5af26`.
 
 ### 3. Maps key
 
@@ -120,7 +110,7 @@ Region is **asia-south1** (Mumbai), same as Firestore. The Android client calls 
 `.env` example:
 
 ```bash
-ADMIN_EMAILS=robindotx@gmail.com
+ADMIN_EMAILS=<your-admin-email>
 SMS_PROVIDER=bulksmsbd
 SMS_API_URL=https://bulksmsbd.net/api/smsapi
 SMS_API_KEY=
@@ -192,11 +182,11 @@ cd functions && npm test
 
 1. Firebase প্রজেক্ট বানান। Android অ্যাপের প্যাকেজ `com.hisabboi.app`।
 2. `app/google-services.json` প্লেসহোল্ডার ফাইলটি নতুন ফাইল দিয়ে বদলান।
-3. Authentication-এ Google চালু করুন। ডিবাগ SHA-1 হলো `81:59:C2:4B:0F:17:23:CF:56:A2:5C:E1:ED:9E:7D:CF:07:68:BF:9E` (`app/debug.keystore`)। Firebase প্রজেক্ট আইডি `hisab-boi-5af26`। ফাংশন রিজিয়ন `asia-south1`।
+3. Authentication-এ Google চালু করুন। ডিবাগ SHA-1 দেখতে `./gradlew :app:signingReport` চালান (`app/debug.keystore`)। Firebase প্রজেক্ট আইডি `hisab-boi-5af26`। ফাংশন রিজিয়ন `asia-south1`।
 4. Firestore, Storage, Cloud Messaging চালু করুন।
 5. `local.properties`-এ `MAPS_API_KEY` দিন (ম্যাপের জন্য)। কী কমিট করবেন না।
 6. `firebase deploy --only firestore:rules,firestore:indexes,storage`
-7. `functions/.env`-এ `ADMIN_EMAILS=robindotx@gmail.com` রাখুন বা নিজের অ্যাডমিন ইমেইল দিন। তারপর `firebase deploy --only functions`। অ্যাডমিন চেক শুধু কাস্টম ক্লেইম `admin` দিয়ে হয়।
+7. `functions/.env`-এ `ADMIN_EMAILS=<your-admin-email>` দিন। এই ফাইল কমিট হয় না। তারপর `firebase deploy --only functions`। অ্যাডমিন চেক শুধু কাস্টম ক্লেইম `admin` দিয়ে হয়।
 8. এসএমএস গেটওয়ের `SMS_API_KEY` সেট না করলে ফোনের এসএমএস অ্যাপ খুলবে।
 9. `./gradlew assembleDebug` দিয়ে ডিবাগ APK বানান।
 

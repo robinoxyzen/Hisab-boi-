@@ -1,23 +1,39 @@
 package com.hisabboi.feature.ledger
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -25,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -94,6 +111,8 @@ data class LedgerUi(
     val filter: Int = 0,
     val rows: List<Contact> = emptyList(),
     val businesses: List<Business> = emptyList(),
+    val lastTx: Map<String, Long> = emptyMap(),
+    val verified: Boolean = false,
 )
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -101,16 +120,21 @@ data class LedgerUi(
 class LedgerViewModel @Inject constructor(
     private val session: ActiveBusinessSource,
     contacts: ContactRepository,
+    transactions: TransactionRepository,
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     private val filter = MutableStateFlow(0)
     private val contactFlow = session.active.flatMapLatest { biz ->
         if (biz == null) flowOf(emptyList()) else contacts.observe(session.user.value?.uid.orEmpty(), biz.id)
     }
+    private val txFlow = session.active.flatMapLatest { biz ->
+        val uid = session.user.value?.uid.orEmpty()
+        if (biz == null || uid.isBlank()) flowOf(emptyList()) else transactions.observeAll(uid, biz.id)
+    }
     private val header = combine(session.active, session.businesses, session.offline) { biz, allBiz, offline ->
         Triple(biz, allBiz, offline)
     }
-    val state = combine(header, contactFlow, query, filter) { (biz, allBiz, offline), contacts, q, f ->
+    val state = combine(header, contactFlow, txFlow, query, filter) { (biz, allBiz, offline), contacts, txs, q, f ->
         val all = contacts.filter { !it.deleted }
         val filtered = all.filter { c ->
             val kindOk = when (f) {
@@ -124,7 +148,18 @@ class LedgerViewModel @Inject constructor(
             kindOk && (text.isEmpty() || c.name.contains(text, true) || c.phone.contains(text))
         }
         val (receive, pay) = BalanceMath.totals(all.map { it.balance })
-        LedgerUi(biz?.name ?: "হিসাব বই", offline, receive, pay, q, f, filtered, allBiz.filter { !it.deleted })
+        LedgerUi(
+            biz?.name ?: "হিসাব বই",
+            offline,
+            receive,
+            pay,
+            q,
+            f,
+            filtered,
+            allBiz.filter { !it.deleted },
+            com.hisabboi.model.LedgerList.lastDates(txs),
+            verified = biz?.verified == true,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LedgerUi())
 
     fun search(value: String) { query.value = value }
@@ -147,34 +182,63 @@ class LedgerViewModel @Inject constructor(
 fun LedgerScreen(
     onAdd: () -> Unit,
     onOpen: (String) -> Unit,
+    onScan: () -> Unit,
     viewModel: LedgerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateSafe()
     val context = LocalContext.current
     var sheet by remember { mutableStateOf(false) }
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(state.title.ifBlank { "খাতা" }, modifier = Modifier.clickable { sheet = true })
-                        if (state.offline) Text("অফলাইনে সংরক্ষিত", style = MaterialTheme.typography.bodySmall)
+            Surface(color = com.hisabboi.ui.Teal, shadowElevation = 4.dp) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.statusBars)
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text(
+                                state.title.ifBlank { "খাতা" },
+                                color = androidx.compose.ui.graphics.Color.White,
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                                modifier = Modifier.weight(1f, fill = false).clickable { sheet = true },
+                                maxLines = 1,
+                            )
+                            if (state.verified) {
+                                Spacer(Modifier.width(4.dp))
+                                com.hisabboi.ui.VerifiedSeal()
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        com.hisabboi.ui.StatusBadge(
+                            if (state.offline) com.hisabboi.model.NoticeKind.PENDING else com.hisabboi.model.NoticeKind.SUCCESS,
+                            if (state.offline) "অফলাইনে সংরক্ষিত" else "সিঙ্ক হয়েছে",
+                        )
                     }
-                },
-                actions = {
+                    IconButton(onClick = onScan) { Icon(Icons.Default.QrCodeScanner, contentDescription = "পণ্য স্ক্যান", tint = androidx.compose.ui.graphics.Color.White) }
                     IconButton(onClick = {
                         val bytes = Files.pdf(context, "খাতা", viewModel.exportLines())
                         Files.share(context, "khata.pdf", bytes, "application/pdf")
-                    }) { Icon(Icons.Default.FileDownload, contentDescription = "রিপোর্ট") }
-                },
-            )
+                    }) { Icon(Icons.Default.FileDownload, contentDescription = "রিপোর্ট", tint = androidx.compose.ui.graphics.Color.White) }
+                }
+            }
         },
-        floatingActionButton = { FloatingActionButton(onClick = onAdd) { Icon(Icons.Default.Add, contentDescription = "যোগ") } },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(onClick = onAdd) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("কাস্টমার যোগ")
+            }
+        },
     ) { padding ->
         Column(Modifier.padding(padding).padding(horizontal = 16.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatTile("মোট পাবো", state.receive, true, Modifier.weight(1f))
-                StatTile("মোট দেবো", state.pay, false, Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                com.hisabboi.ui.MoneySummaryCard("মোট পাবো", state.receive, true, Modifier.weight(1f))
+                com.hisabboi.ui.MoneySummaryCard("মোট দেবো", state.pay, false, Modifier.weight(1f))
             }
             OutlinedTextField(
                 value = state.query,
@@ -182,22 +246,31 @@ fun LedgerScreen(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 label = { Text("খুঁজুন") },
                 singleLine = true,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
             )
-            ChipRow(
-                listOf("সব" to (state.filter == 0), "কাস্টমার" to (state.filter == 1), "সাপ্লায়ার" to (state.filter == 2), "পাবো" to (state.filter == 3), "দেবো" to (state.filter == 4)),
-                viewModel::filter,
-            )
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("সব", "কাস্টমার", "সাপ্লায়ার", "পাবো", "দেবো").forEachIndexed { index, label ->
+                    androidx.compose.material3.FilterChip(
+                        selected = state.filter == index,
+                        onClick = { viewModel.filter(index) },
+                        label = { Text(label) },
+                    )
+                }
+            }
             if (state.rows.isEmpty()) {
-                EmptyHint("এখনো কেউ নেই", "কাস্টমার বা সাপ্লায়ার যোগ করলে পাবো-দেবো এখানে দেখাবে।")
+                com.hisabboi.ui.LedgerEmptyState(onAdd)
             } else {
-                LazyColumn(contentPadding = PaddingValues(bottom = 88.dp)) {
+                LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
                     items(state.rows, key = { it.id }) { contact ->
-                        ListItem(
-                            headlineContent = { Text(contact.name) },
-                            supportingContent = { Text("${contact.kind.label()} · ${contact.phone}") },
-                            leadingContent = { Avatar(contact.name, contact.photoBase64) },
-                            trailingContent = { MoneyText(kotlin.math.abs(contact.balance), contact.balance >= 0) },
-                            modifier = Modifier.clickable { onOpen(contact.id) },
+                        val last = state.lastTx[contact.id] ?: 0L
+                        com.hisabboi.ui.ContactAmountRow(
+                            name = contact.name,
+                            phone = contact.phone,
+                            photo = contact.photoBase64,
+                            lastLabel = if (last == 0L) "কোনো লেনদেন নেই" else BnDate.format(last),
+                            amount = contact.balance,
+                            verified = contact.kycVerified,
+                            onClick = { onOpen(contact.id) },
                         )
                     }
                 }
@@ -280,6 +353,7 @@ class ContactDetailViewModel @Inject constructor(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContactDetailScreen(
     onBack: () -> Unit,
@@ -292,48 +366,115 @@ fun ContactDetailScreen(
     val state by viewModel.state.collectAsStateSafe()
     val contact = state.contact
     val context = LocalContext.current
-    SimpleScaffold(contact?.name ?: "পরিচিতি", onBack) { padding ->
-        LazyColumn(Modifier.padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item {
-                if (contact == null) {
-                    EmptyHint("খুঁজে পাওয়া যায়নি", "এই পরিচিতি মুছে ফেলা হয়েছে বা এখনো সিঙ্ক হয়নি।")
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Avatar(contact.name, contact.photoBase64, Modifier)
-                        Column {
-                            Text(contact.phone)
-                            Text(if (contact.balance >= 0) "পাবো ${Money.format(contact.balance)}" else "দেবো ${Money.format(-contact.balance)}")
-                            if (contact.kycVerified) Text("যাচাইকৃত কাস্টমার")
-                            if (contact.creditLimit != null) Text("সীমা ${Money.format(contact.creditLimit ?: 0.0)}")
-                        }
+    var menu by remember { mutableStateOf(false) }
+    val balance = contact?.balance ?: state.computed
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    com.hisabboi.ui.NameWithSeal(
+                        contact?.name ?: "পরিচিতি",
+                        verified = contact?.kycVerified == true,
+                        message = "এই কাস্টমার যাচাইকৃত",
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "ফিরে যান") }
+                },
+                actions = {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "আরও") }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("সম্পাদনা") }, onClick = { menu = false; contact?.let { onEdit(it.id) } })
+                        DropdownMenuItem(text = { Text("কেওয়াইসি") }, onClick = { menu = false; contact?.let { onKyc(it.id) } })
+                        DropdownMenuItem(text = { Text("মিলান") }, onClick = { menu = false; viewModel.reconcile() })
+                        DropdownMenuItem(text = { Text("মুছুন") }, onClick = { menu = false; viewModel.removeContact() })
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                        TextButton(onClick = { onEntry(contact.id, "gave") }) { Text("দিলাম") }
-                        TextButton(onClick = { onEntry(contact.id, "received") }) { Text("পেলাম") }
-                        TextButton(onClick = { onEdit(contact.id) }) { Text("সম্পাদনা") }
-                    }
-                    Row {
-                        TextButton(onClick = { onKyc(contact.id) }) { Text("কেওয়াইসি") }
-                        TextButton(onClick = { onRemind(contact.id) }) { Text("তাগাদা") }
-                        TextButton(onClick = viewModel::reconcile) { Text("মিলান") }
-                        TextButton(onClick = viewModel::removeContact) { Text("মুছুন") }
-                    }
-                    TextButton(onClick = {
-                        val bytes = Files.pdf(context, contact.name, viewModel.reportLines())
-                        Files.share(context, "contact.pdf", bytes, "application/pdf")
-                    }) { Text("রিপোর্ট") }
-                }
-            }
-            items(state.rows) { (tx, balance) ->
-                ListItem(
-                    headlineContent = { Text("${tx.direction.label()} ${Money.format(tx.amount)}") },
-                    supportingContent = { Text("${BnDate.format(tx.dateMillis)} · ${tx.description}") },
-                    trailingContent = {
-                        TextButton(onClick = { viewModel.remove(tx) }) { Text("মুছুন") }
-                    },
+                },
+            )
+        },
+        bottomBar = {
+            if (contact != null) {
+                com.hisabboi.ui.DualActionBar(
+                    onGave = { onEntry(contact.id, "gave") },
+                    onReceived = { onEntry(contact.id, "received") },
+                    modifier = Modifier.padding(16.dp).windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars),
                 )
             }
+        },
+    ) { padding ->
+        LazyColumn(Modifier.padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (contact == null) {
+                item { EmptyHint("খুঁজে পাওয়া যায়নি", "এই পরিচিতি মুছে ফেলা হয়েছে বা এখনো সিঙ্ক হয়নি।") }
+            } else {
+                item {
+                    androidx.compose.material3.Card(
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Avatar(contact.name, contact.photoBase64)
+                                Column {
+                                    Text(contact.phone.ifBlank { "ফোন নেই" }, style = MaterialTheme.typography.bodyMedium)
+                                    if (contact.kycVerified) com.hisabboi.ui.StatusBadge(com.hisabboi.model.NoticeKind.SUCCESS, "যাচাইকৃত")
+                                }
+                            }
+                            Text(if (balance >= 0) "পাবো" else "দেবো", color = if (balance >= 0) com.hisabboi.ui.Receive else com.hisabboi.ui.Payable)
+                            Text(
+                                Money.format(kotlin.math.abs(balance)),
+                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                                color = if (balance >= 0) com.hisabboi.ui.Receive else com.hisabboi.ui.Payable,
+                            )
+                        }
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        QuickAction(Icons.Default.Call, "কল") {
+                            if (contact.phone.isNotBlank()) {
+                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${contact.phone}")))
+                            }
+                        }
+                        QuickAction(Icons.AutoMirrored.Filled.Message, "তাগাদা") { onRemind(contact.id) }
+                        QuickAction(Icons.Default.Chat, "হোয়াটসঅ্যাপ") {
+                            if (contact.phone.isNotBlank()) Files.whatsApp(context, contact.phone, com.hisabboi.model.Templates.reminder("", kotlin.math.abs(contact.balance)))
+                        }
+                        QuickAction(Icons.Default.Description, "রিপোর্ট") {
+                            val bytes = Files.pdf(context, contact.name, viewModel.reportLines())
+                            Files.share(context, "contact.pdf", bytes, "application/pdf")
+                        }
+                    }
+                }
+            }
+            items(state.rows.size) { index ->
+                val (tx, _) = state.rows[index]
+                val day = BnDate.format(tx.dateMillis)
+                val showDay = index == 0 || BnDate.format(state.rows[index - 1].first.dateMillis) != day
+                Column {
+                    if (showDay) {
+                        Text(day, modifier = Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                    ListItem(
+                        headlineContent = { Text(tx.direction.label()) },
+                        supportingContent = { Text(tx.description.ifBlank { BnDate.formatTime(tx.dateMillis) }) },
+                        trailingContent = {
+                            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                                MoneyText(tx.amount, tx.direction == Direction.RECEIVED)
+                                TextButton(onClick = { viewModel.remove(tx) }) { Text("মুছুন") }
+                            }
+                        },
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun QuickAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick) { Icon(icon, contentDescription = label, tint = com.hisabboi.ui.Teal) }
+        Text(label, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -522,29 +663,69 @@ class EntryViewModel @Inject constructor(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EntryScreen(onBack: () -> Unit, onScan: () -> Unit, viewModel: EntryViewModel = hiltViewModel()) {
     val context = LocalContext.current
+    var problem by remember { mutableStateOf<String?>(null) }
+    var showDate by remember { mutableStateOf(false) }
+    val photoPick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> if (uri != null) viewModel.photo = com.hisabboi.ui.Images.jpeg(context, uri, 1024, 65) }
     LaunchedEffect(Unit) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 is EntryEffect.Sms -> runCatching { Files.sms(context, effect.phone, effect.body) }
-                is EntryEffect.Done -> if (effect.message == "সেভ হয়েছে") onBack()
+                is EntryEffect.Done -> if (effect.message == "সেভ হয়েছে") onBack() else problem = effect.message
             }
         }
     }
-    SimpleScaffold(viewModel.direction.label(), onBack) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val title = if (viewModel.direction == Direction.RECEIVED) "টাকা পেলাম" else "টাকা দিলাম"
+    SimpleScaffold(title, onBack) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Text(viewModel.contact?.name ?: "", style = MaterialTheme.typography.titleMedium)
-            AmountField(viewModel.amount, { viewModel.amount = it })
+            val parsed = com.hisabboi.model.AmountKeypad.evaluate(viewModel.amount)
+            Text(
+                parsed?.let { Money.format(it) } ?: "৳০",
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                color = if (viewModel.direction == Direction.RECEIVED) com.hisabboi.ui.Receive else com.hisabboi.ui.Payable,
+            )
+            Text(viewModel.amount.ifBlank { "0" }, style = MaterialTheme.typography.bodySmall)
+            com.hisabboi.ui.AmountKeypad(onKey = { key ->
+                viewModel.amount = com.hisabboi.model.AmountKeypad.push(viewModel.amount, key)
+            })
             NoteField(viewModel.note, { viewModel.note = it }, onScan)
-            Text(BnDate.format(viewModel.date))
+            TextButton(onClick = { showDate = true }) { Text("তারিখ: ${BnDate.format(viewModel.date)}") }
+            TextButton(onClick = {
+                photoPick.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }) { Text(if (viewModel.photo.isBlank()) "বিলের ছবি (ঐচ্ছিক)" else "ছবি যোগ হয়েছে") }
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text("লেনদেনের মেসেজ")
+                Text("লেনদেনের মেসেজ", modifier = Modifier.weight(1f))
                 Switch(viewModel.sms, { viewModel.sms = it })
             }
-            PrimaryButton("নিশ্চিত", viewModel::requestSave, Money.parse(viewModel.amount) != null)
+            problem?.let { com.hisabboi.ui.ResultBanner(it) }
+            PrimaryButton("সেভ করুন", {
+                val value = com.hisabboi.model.AmountKeypad.evaluate(viewModel.amount)
+                if (value != null) viewModel.amount = com.hisabboi.model.AmountKeypad.plain(value)
+                viewModel.requestSave()
+            }, parsed != null && parsed > 0)
         }
+    }
+    if (showDate) {
+        val dateState = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = viewModel.date)
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { showDate = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    dateState.selectedDateMillis?.let { viewModel.date = it }
+                    showDate = false
+                }) { Text("ঠিক আছে") }
+            },
+            dismissButton = { TextButton(onClick = { showDate = false }) { Text("বাতিল") } },
+        ) { androidx.compose.material3.DatePicker(state = dateState) }
     }
     if (viewModel.warnCredit) {
         AlertDialog(

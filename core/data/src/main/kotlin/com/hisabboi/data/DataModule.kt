@@ -16,6 +16,7 @@ import com.hisabboi.model.KycRepository
 import com.hisabboi.model.LocalNotifier
 import com.hisabboi.model.MediaUploader
 import com.hisabboi.model.PaymentRepository
+import com.hisabboi.model.ProfilePhotoRepository
 import com.hisabboi.model.ProductRepository
 import com.hisabboi.model.PublicShopRepository
 import com.hisabboi.model.ReminderRepository
@@ -81,4 +82,5 @@ abstract class RepositoryBindings {
     @Binds @Singleton abstract fun notifier(impl: AndroidNotifier): LocalNotifier
     @Binds @Singleton abstract fun tokens(impl: TokenRepositoryImpl): TokenRepository
     @Binds @Singleton abstract fun media(impl: FirebaseMediaUploader): MediaUploader
+    @Binds @Singleton abstract fun profilePhoto(impl: ProfilePhotoRepositoryImpl): ProfilePhotoRepository
 }

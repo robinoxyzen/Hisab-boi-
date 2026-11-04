@@ -25,6 +25,7 @@ import com.hisabboi.model.cashKindOf
 import com.hisabboi.model.contactKindOf
 import com.hisabboi.model.directionOf
 import com.hisabboi.model.kycOf
+import com.hisabboi.model.UserFacingError
 import com.hisabboi.model.verificationOf
 
 internal fun Any?.asDouble(): Double = when (this) {
@@ -205,6 +206,11 @@ internal fun DocumentSnapshot.toProduct(): Product = Product(
     id = id,
     barcode = getString("barcode").orEmpty(),
     name = getString("name").orEmpty(),
+    buyPrice = get("buyPrice").asDouble(),
+    sellPrice = get("sellPrice").asDouble(),
+    stock = get("stock").asDouble(),
+    unit = getString("unit").orEmpty().ifBlank { "পিস" },
+    photoBase64 = getString("photoBase64").orEmpty(),
     deleted = get("deleted").asBool(),
     updatedAt = get("updatedAt").asLong(),
 )
@@ -310,13 +316,4 @@ internal fun DocumentSnapshot.toVerification(images: Map<String, String> = empty
     reviewedAt = get("reviewedAt").asLong(),
 )
 
-internal fun Throwable.bangla(): String {
-    val raw = message.orEmpty()
-    return when {
-        raw.contains("PERMISSION_DENIED", true) -> "এই তথ্য দেখার অনুমতি নেই"
-        raw.contains("UNAVAILABLE", true) -> "অফলাইন। তথ্য পরে সিঙ্ক হবে"
-        raw.contains("placeholder", true) -> raw
-        raw.isBlank() -> "কিছু একটা ভুল হয়েছে"
-        else -> raw
-    }
-}
+internal fun Throwable.bangla(): String = UserFacingError.auth(message)

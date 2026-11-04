@@ -1,9 +1,7 @@
-/** Single configuration default. Override with the ADMIN_EMAILS environment parameter. */
-export const DEFAULT_ADMIN_EMAILS = "robindotx@gmail.com";
-
+/** Admin emails come only from ADMIN_EMAILS. There is no address baked into the source. */
 export function parseAdminEmails(raw: string | undefined): string[] {
-  const value = (raw && raw.trim()) || DEFAULT_ADMIN_EMAILS;
-  return value
+  if (!raw || !raw.trim()) return [];
+  return raw
     .split(",")
     .map((item) => item.trim().toLowerCase())
     .filter((item) => item.length > 0);

@@ -5,6 +5,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.hisabboi.model.BalanceMath
+import com.hisabboi.model.Catalog
+import com.hisabboi.model.RemoteList
+import com.hisabboi.model.UserFacingError
 import com.hisabboi.model.CashEntry
 import com.hisabboi.model.CashRepository
 import com.hisabboi.model.Contact
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -202,13 +206,25 @@ class CashRepositoryImpl @Inject constructor(
 class ProductRepositoryImpl @Inject constructor(
     private val db: FirebaseFirestore,
 ) : ProductRepository {
-    override fun observe(uid: String, businessId: String): Flow<List<Product>> = callbackFlow {
+    override fun watch(uid: String, businessId: String): Flow<RemoteList<Product>> = callbackFlow {
+        trySend(RemoteList(loading = true))
         val reg = db.biz(uid, businessId).collection("products").addSnapshotListener { snap, err ->
-            if (err != null || snap == null) return@addSnapshotListener
-            trySend(snap.documents.map { it.toProduct() }.sortedBy { it.name })
+            when {
+                err != null -> trySend(RemoteList(loading = false, error = UserFacingError.auth(err.message)))
+                snap == null -> trySend(RemoteList(loading = false, error = UserFacingError.GENERIC))
+                else -> trySend(
+                    RemoteList(
+                        items = snap.documents.map { it.toProduct() }.sortedBy { it.name },
+                        loading = false,
+                    ),
+                )
+            }
         }
         awaitClose { reg.remove() }
     }
+
+    override fun observe(uid: String, businessId: String): Flow<List<Product>> =
+        watch(uid, businessId).map { it.items }
 
     override suspend fun upsert(uid: String, businessId: String, product: Product): Result<Product> = runCatching {
         val col = db.biz(uid, businessId).collection("products")
@@ -218,17 +234,38 @@ class ProductRepositoryImpl @Inject constructor(
             existing != null -> existing.reference
             else -> col.document()
         }
-        val saved = product.copy(id = ref.id, updatedAt = System.currentTimeMillis(), deleted = false)
+        val saved = product.copy(
+            id = ref.id,
+            unit = product.unit.ifBlank { "পিস" },
+            updatedAt = System.currentTimeMillis(),
+            deleted = false,
+        )
         ref.set(
             mapOf(
                 "barcode" to saved.barcode,
                 "name" to saved.name,
+                "buyPrice" to saved.buyPrice,
+                "sellPrice" to saved.sellPrice,
+                "stock" to saved.stock,
+                "unit" to saved.unit,
+                "photoBase64" to saved.photoBase64,
                 "deleted" to false,
                 "updatedAt" to saved.updatedAt,
             ),
             SetOptions.merge(),
         ).await()
         saved
+    }.mapError()
+
+    override suspend fun adjustStock(uid: String, businessId: String, productId: String, delta: Double): Result<Product> = runCatching {
+        val ref = db.biz(uid, businessId).collection("products").document(productId)
+        db.runTransaction { tx ->
+            val snap = tx.get(ref)
+            val updated = Catalog.adjustedStock(snap.get("stock").asDouble(), delta)
+            val now = System.currentTimeMillis()
+            tx.update(ref, mapOf("stock" to updated, "updatedAt" to now))
+            snap.toProduct().copy(stock = updated, updatedAt = now)
+        }.await()
     }.mapError()
 
     override suspend fun softDelete(uid: String, businessId: String, productId: String): Result<Unit> = runCatching {
@@ -273,8 +310,8 @@ class PaymentRepositoryImpl @Inject constructor(
 class ScanBusImpl @Inject constructor() : ScanBus {
     private val _payload = MutableStateFlow<ScanPayload?>(null)
     override val payload: StateFlow<ScanPayload?> = _payload
-    override fun publish(items: List<LineItem>) {
-        _payload.value = ScanPayload(System.nanoTime(), items)
+    override fun publish(items: List<LineItem>, suggestedAmount: Double?) {
+        _payload.value = ScanPayload(System.nanoTime(), items, suggestedAmount)
     }
     override fun consume(id: Long) {
         if (_payload.value?.id == id) _payload.value = null

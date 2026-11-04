@@ -13,6 +13,9 @@ interface AuthGateway {
     suspend fun reauthenticate(host: Any): Result<SessionUser>
     suspend fun refreshAdminClaim(): Result<Boolean>
     fun signOut()
+
+    /** Updates the in-memory avatar after a profile photo upload or removal. */
+    fun applyLocalPhoto(custom: String?, hideGoogle: Boolean)
 }
 
 interface ActiveBusinessSource {
@@ -53,8 +56,10 @@ interface CashRepository {
 }
 
 interface ProductRepository {
+    fun watch(uid: String, businessId: String): Flow<RemoteList<Product>>
     fun observe(uid: String, businessId: String): Flow<List<Product>>
     suspend fun upsert(uid: String, businessId: String, product: Product): Result<Product>
+    suspend fun adjustStock(uid: String, businessId: String, productId: String, delta: Double): Result<Product>
     suspend fun softDelete(uid: String, businessId: String, productId: String): Result<Unit>
 }
 
@@ -116,7 +121,7 @@ interface SettingsStore {
 
 interface ScanBus {
     val payload: StateFlow<ScanPayload?>
-    fun publish(items: List<LineItem>)
+    fun publish(items: List<LineItem>, suggestedAmount: Double? = null)
     fun consume(id: Long)
 }
 
@@ -130,6 +135,12 @@ interface TokenRepository {
 
 interface MediaUploader {
     suspend fun upload(storagePath: String, jpeg: ByteArray): String
+}
+
+/** The signed-in user's own profile photo. Stored at users/{uid}/profile.jpg. */
+interface ProfilePhotoRepository {
+    suspend fun upload(uid: String, jpeg: ByteArray): Result<String>
+    suspend fun remove(uid: String): Result<Unit>
 }
 
 /** Client-side encryption for NID numbers. Key never leaves the device Keystore. */

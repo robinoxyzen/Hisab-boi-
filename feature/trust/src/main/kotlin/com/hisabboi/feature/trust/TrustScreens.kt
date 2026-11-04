@@ -129,7 +129,7 @@ fun KycScreen(onBack: () -> Unit, viewModel: KycViewModel = hiltViewModel()) {
             ShotButton("এনআইডি পেছনে") { viewModel.back = it }
             PrimaryButton("সেভ", viewModel::save)
             TextButton(onClick = viewModel::delete) { Text("কেওয়াইসি মুছুন") }
-            viewModel.message?.let { Text(it) }
+            com.hisabboi.ui.ResultBanner(viewModel.message)
         }
     }
 }
@@ -200,7 +200,10 @@ fun VerificationScreen(onBack: () -> Unit, viewModel: VerifyViewModel = hiltView
     val mine by viewModel.mine.collectAsStateWithLifecycle()
     SimpleScaffold("ভেরিফাইড দোকান", onBack) { padding ->
         Column(Modifier.padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("স্ট্যাটাস: ${mine.status.name.lowercase()}")
+            run {
+                val (kind, label) = com.hisabboi.model.NoticeTone.verification(mine.status)
+                com.hisabboi.ui.StatusBadge(kind, label)
+            }
             if (mine.reason.isNotBlank()) Text("কারণ: ${mine.reason}")
             Text("কাগজ শুধু আপনি ও প্ল্যাটফর্ম অ্যাডমিন দেখতে পারবেন। পাবলিক পেজে শুধু সবুজ ব্যাজ যায়।")
             OutlinedTextField(viewModel.nid, { viewModel.nid = it }, label = { Text("এনআইডি নম্বর") }, modifier = Modifier.fillMaxWidth())
@@ -209,7 +212,7 @@ fun VerificationScreen(onBack: () -> Unit, viewModel: VerifyViewModel = hiltView
             ShotButton("লাইভ সেলফি") { viewModel.selfie = it }
             ShotButton("ট্রেড লাইসেন্স (ঐচ্ছিক)") { viewModel.trade = it }
             PrimaryButton("জমা দিন", viewModel::submit)
-            viewModel.message?.let { Text(it) }
+            com.hisabboi.ui.ResultBanner(viewModel.message)
         }
     }
 }
@@ -256,7 +259,10 @@ fun AdminScreen(onBack: () -> Unit, viewModel: AdminViewModel = hiltViewModel())
                 items(queue, key = { it.businessId }) { item ->
                     ListItem(
                         headlineContent = { Text(item.businessName.ifBlank { item.businessId }) },
-                        supportingContent = { Text(item.status.name.lowercase()) },
+                        supportingContent = {
+                            val (kind, label) = com.hisabboi.model.NoticeTone.verification(item.status)
+                            com.hisabboi.ui.StatusBadge(kind, label)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         trailingContent = {
                             TextButton(onClick = { viewModel.open(item.ownerUid, item.businessId) }) { Text("খুলুন") }

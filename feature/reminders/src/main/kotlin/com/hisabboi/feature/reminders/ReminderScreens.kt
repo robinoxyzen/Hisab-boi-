@@ -3,6 +3,7 @@ package com.hisabboi.feature.reminders
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -244,13 +245,19 @@ fun ReminderScreen(onBack: () -> Unit, viewModel: ReminderViewModel = hiltViewMo
             }
             item {
                 PrimaryButton("পাঠান", { viewModel.send(context) })
-                viewModel.note?.let { Text(it) }
+                com.hisabboi.ui.ResultBanner(viewModel.note)
                 Text("ইতিহাস")
             }
             items(history, key = { it.id }) { item ->
                 ListItem(
                     headlineContent = { Text("${item.contactName} · ${item.channel.label()}") },
-                    supportingContent = { Text("${item.status} ${if (item.scheduledAt > 0) BnDate.format(item.scheduledAt) else ""}") },
+                    supportingContent = {
+                        val (kind, label) = com.hisabboi.model.NoticeTone.reminder(item.status)
+                        Row {
+                            com.hisabboi.ui.StatusBadge(kind, label)
+                            if (item.scheduledAt > 0) Text(" ${BnDate.format(item.scheduledAt)}")
+                        }
+                    },
                 )
             }
         }
