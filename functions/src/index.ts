@@ -15,7 +15,7 @@ initializeApp();
 setGlobalOptions({ region: "asia-south1", maxInstances: 10 });
 
 const adminEmails = defineString("ADMIN_EMAILS", {
-  default: "robinoxyzen@gmail.com",
+  default: "robindotx@gmail.com",
   description: "Comma-separated verified Google emails that receive the admin custom claim.",
 });
 

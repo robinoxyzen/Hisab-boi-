@@ -120,7 +120,7 @@ Region is **asia-south1** (Mumbai), same as Firestore. The Android client calls 
 `.env` example:
 
 ```bash
-ADMIN_EMAILS=robinoxyzen@gmail.com
+ADMIN_EMAILS=robindotx@gmail.com
 SMS_PROVIDER=bulksmsbd
 SMS_API_URL=https://bulksmsbd.net/api/smsapi
 SMS_API_KEY=
@@ -196,7 +196,7 @@ cd functions && npm test
 4. Firestore, Storage, Cloud Messaging চালু করুন।
 5. `local.properties`-এ `MAPS_API_KEY` দিন (ম্যাপের জন্য)। কী কমিট করবেন না।
 6. `firebase deploy --only firestore:rules,firestore:indexes,storage`
-7. `functions/.env`-এ `ADMIN_EMAILS=robinoxyzen@gmail.com` রাখুন বা নিজের অ্যাডমিন ইমেইল দিন। তারপর `firebase deploy --only functions`। অ্যাডমিন চেক শুধু কাস্টম ক্লেইম `admin` দিয়ে হয়।
+7. `functions/.env`-এ `ADMIN_EMAILS=robindotx@gmail.com` রাখুন বা নিজের অ্যাডমিন ইমেইল দিন। তারপর `firebase deploy --only functions`। অ্যাডমিন চেক শুধু কাস্টম ক্লেইম `admin` দিয়ে হয়।
 8. এসএমএস গেটওয়ের `SMS_API_KEY` সেট না করলে ফোনের এসএমএস অ্যাপ খুলবে।
 9. `./gradlew assembleDebug` দিয়ে ডিবাগ APK বানান।
 

@@ -1,5 +1,5 @@
 /** Single configuration default. Override with the ADMIN_EMAILS environment parameter. */
-export const DEFAULT_ADMIN_EMAILS = "robinoxyzen@gmail.com";
+export const DEFAULT_ADMIN_EMAILS = "robindotx@gmail.com";
 
 export function parseAdminEmails(raw: string | undefined): string[] {
   const value = (raw && raw.trim()) || DEFAULT_ADMIN_EMAILS;
