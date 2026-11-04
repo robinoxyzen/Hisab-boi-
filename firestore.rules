@@ -1,0 +1,143 @@
+rules_version = '2';
+// হিসাব বই — owner-scoped data.
+// Admin access uses the Firebase Auth custom claim `admin` only.
+// KYC is readable by the owning shopkeeper and never by other shops, the public, or platform admins.
+// Verification documents are readable by the owner and admins. Public shop pages expose only the badge.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+    function businessDoc(uid, bid) {
+      return get(/databases/$(database)/documents/users/$(uid)/businesses/$(bid)).data;
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update, delete: if isOwner(uid);
+
+      match /fcmTokens/{tokenId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /businesses/{bid} {
+        function createBadgeClean() {
+          return request.resource.data.verified == false
+            && request.resource.data.verificationStatus == "none";
+        }
+        function badgeUnchanged() {
+          return request.resource.data.verified == resource.data.verified
+            && request.resource.data.verificationStatus == resource.data.verificationStatus
+            && request.resource.data.get("verificationReason", "") == resource.data.get("verificationReason", "");
+        }
+        function ownerSubmitsReview() {
+          return resource.data.verified == false
+            && request.resource.data.verified == false
+            && resource.data.verificationStatus in ["none", "rejected", "pending"]
+            && request.resource.data.verificationStatus == "pending";
+        }
+
+        allow read: if isOwner(uid) || isAdmin();
+        allow create: if isOwner(uid) && createBadgeClean();
+        allow update: if isAdmin() || (isOwner(uid) && (badgeUnchanged() || ownerSubmitsReview()));
+        allow delete: if isOwner(uid) || isAdmin();
+
+        match /contacts/{cid} {
+          allow read, write: if isOwner(uid);
+          match /kyc/{docId} {
+            // Customer KYC belongs only to this shopkeeper.
+            allow read, write: if isOwner(uid);
+          }
+          match /reminderHistory/{hid} {
+            allow read, write: if isOwner(uid);
+          }
+        }
+
+        match /transactions/{tid} {
+          allow read, write: if isOwner(uid);
+        }
+        match /cashEntries/{eid} {
+          allow read, write: if isOwner(uid);
+        }
+        match /products/{pid} {
+          allow read, write: if isOwner(uid);
+        }
+        match /paymentProfile/{docId} {
+          allow read, write: if isOwner(uid);
+        }
+        match /reminders/{rid} {
+          allow read, write: if isOwner(uid);
+        }
+        match /verification/{docId} {
+          allow read: if isOwner(uid) || isAdmin();
+          allow write: if isOwner(uid) || isAdmin();
+        }
+      }
+    }
+
+    match /publicShops/{bid} {
+      function keysOk() {
+        return request.resource.data.keys().hasOnly([
+          "ownerUid", "name", "type", "phone", "address", "latitude", "longitude",
+          "openingHours", "shopPhotoBase64", "verified", "payment", "updatedAt"
+        ]);
+      }
+      function paymentOk() {
+        return request.resource.data.payment.keys().hasOnly([
+          "holderName", "bkash", "nagad", "rocket", "bankName", "bankAccount",
+          "bankBranch", "banglaQr"
+        ]);
+      }
+      function badgeMatchesBusiness() {
+        return request.resource.data.verified == businessDoc(request.auth.uid, bid).verified;
+      }
+
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && keysOk()
+        && paymentOk()
+        && badgeMatchesBusiness();
+      allow update: if isAdmin() || (
+        signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && keysOk()
+        && paymentOk()
+        && badgeMatchesBusiness()
+      );
+      allow delete: if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+    }
+
+    match /verificationRequests/{bid} {
+      function summaryKeysOk() {
+        return request.resource.data.keys().hasOnly([
+          "ownerUid", "businessId", "businessName", "status", "reason", "submittedAt", "reviewedAt"
+        ]) && !request.resource.data.keys().hasAny([
+          "nid", "nidEncrypted", "nidNumber", "nidFrontBase64", "nidBackBase64",
+          "selfieBase64", "tradeLicenseBase64", "photoBase64"
+        ]);
+      }
+      allow read: if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == "pending"
+        && summaryKeysOk();
+      allow update: if isAdmin() || (
+        signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == "pending"
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && summaryKeysOk()
+      );
+      allow delete: if isAdmin() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+    }
+  }
+}

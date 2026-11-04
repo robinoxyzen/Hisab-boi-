@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.HisabBoi" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#0E7C66</item>
+        <item name="android:navigationBarColor">#F3F6F4</item>
+        <item name="android:windowBackground">#F3F6F4</item>
+    </style>
+</resources>

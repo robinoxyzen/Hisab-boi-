@@ -1,0 +1,6 @@
+## Copy to local.properties. Android Studio writes sdk.dir for you.
+# sdk.dir=/path/to/Android/Sdk
+#
+# Google Maps SDK key. Enable "Maps SDK for Android" on this key.
+# Never commit the real key. The app also navigates with a geo: intent, which does not need this key.
+MAPS_API_KEY=
